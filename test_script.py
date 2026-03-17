@@ -2,6 +2,7 @@ import unittest
 import json
 import os
 import tempfile
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from script import (
@@ -12,6 +13,10 @@ from script import (
     normalize_record,
     should_include_easy2hard_record,
 )
+
+
+def _raise_network_error(*args, **kwargs):
+    raise OSError("network unavailable")
 
 
 class ScriptTests(unittest.TestCase):
@@ -57,25 +62,27 @@ class ScriptTests(unittest.TestCase):
             output_path = os.path.join(tmpdir, "out.json")
             calls = []
 
-            class FakeDatasetsModule:
-                @staticmethod
-                def get_dataset_config_names(name):
-                    calls.append(("configs", name))
-                    return ["main"]
+            def get_dataset_config_names(name):
+                calls.append(("configs", name))
+                return ["main"]
 
-                @staticmethod
-                def load_dataset(name, config=None):
-                    calls.append(("load", name, config))
-                    if name == "MathArena/aime":
-                        return {"train": [{"problem": "AIME $x$", "answer": "42"}]}
-                    return {
-                        "train": [
-                            {"question": "AMC 10 problem", "answer": "7", "source": "amc10"},
-                            {"question": "Other problem", "answer": "1", "source": "gsm8k"},
-                        ]
-                    }
+            def load_dataset(name, config=None):
+                calls.append(("load", name, config))
+                if name == "MathArena/aime":
+                    return {"train": [{"problem": "AIME $x$", "answer": "42"}]}
+                return {
+                    "train": [
+                        {"question": "AMC 10 problem", "answer": "7", "source": "amc10"},
+                        {"question": "Other problem", "answer": "1", "source": "gsm8k"},
+                    ]
+                }
 
-            with patch.dict("sys.modules", {"datasets": FakeDatasetsModule}):
+            fake_datasets = SimpleNamespace(
+                get_dataset_config_names=get_dataset_config_names,
+                load_dataset=load_dataset,
+            )
+
+            with patch.dict("sys.modules", {"datasets": fake_datasets}):
                 total = build_questions(output_path)
 
             self.assertEqual(total, 2)
@@ -91,16 +98,12 @@ class ScriptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "out.json")
 
-            class FakeDatasetsModule:
-                @staticmethod
-                def get_dataset_config_names(name):
-                    raise OSError("network unavailable")
+            fake_datasets = SimpleNamespace(
+                get_dataset_config_names=_raise_network_error,
+                load_dataset=_raise_network_error,
+            )
 
-                @staticmethod
-                def load_dataset(name, config=None):
-                    raise OSError("network unavailable")
-
-            with patch.dict("sys.modules", {"datasets": FakeDatasetsModule}):
+            with patch.dict("sys.modules", {"datasets": fake_datasets}):
                 with self.assertRaisesRegex(RuntimeError, "No questions were fetched from HuggingFace datasets"):
                     build_questions(output_path)
 
@@ -108,16 +111,12 @@ class ScriptTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, "out.json")
 
-            class FakeDatasetsModule:
-                @staticmethod
-                def get_dataset_config_names(name):
-                    raise OSError("network unavailable")
+            fake_datasets = SimpleNamespace(
+                get_dataset_config_names=_raise_network_error,
+                load_dataset=_raise_network_error,
+            )
 
-                @staticmethod
-                def load_dataset(name, config=None):
-                    raise OSError("network unavailable")
-
-            with patch.dict("sys.modules", {"datasets": FakeDatasetsModule}):
+            with patch.dict("sys.modules", {"datasets": fake_datasets}):
                 total = build_questions(output_path, write_empty_on_failure=True)
 
             self.assertEqual(total, 0)

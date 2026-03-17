@@ -67,11 +67,11 @@ def build_questions(output_path: str, write_empty_on_failure: bool = False) -> i
     try:
         from datasets import get_dataset_config_names, load_dataset
     except ImportError as exc:
-        raise RuntimeError("Please install the 'datasets' package: pip install datasets") from exc
+        raise RuntimeError("Please install dependencies from requirements.txt (includes datasets>=2.0.0).") from exc
 
     questions: List[Dict[str, Any]] = []
     errors: List[str] = []
-    fetch_exceptions = (ConnectionError, OSError, RuntimeError, ValueError)
+    fetch_exceptions = (ConnectionError, OSError, ValueError)
 
     try:
         aime = load_dataset("MathArena/aime")
@@ -79,12 +79,13 @@ def build_questions(output_path: str, write_empty_on_failure: bool = False) -> i
             normalized = normalize_record(row, default_competition="aime")
             if normalized:
                 questions.append(normalized)
-    except fetch_exceptions as exc:  # pragma: no cover - network/runtime dependent
+    except fetch_exceptions as exc:
         errors.append(f"MathArena/aime: {exc}")
 
     try:
         configs = get_dataset_config_names("furonghuang-lab/Easy2Hard-Bench")
         if not configs:
+            # Some datasets expose a default configuration; `None` lets `load_dataset` resolve it.
             configs = [None]
         for config in configs:
             dataset = load_dataset("furonghuang-lab/Easy2Hard-Bench", config)
@@ -94,19 +95,20 @@ def build_questions(output_path: str, write_empty_on_failure: bool = False) -> i
                 normalized = normalize_record(row)
                 if normalized and normalized["competition"] in {"amc8", "amc10", "amc12"}:
                     questions.append(normalized)
-    except fetch_exceptions as exc:  # pragma: no cover - network/runtime dependent
+    except fetch_exceptions as exc:
         errors.append(f"furonghuang-lab/Easy2Hard-Bench: {exc}")
 
     if not questions:
         if errors and not write_empty_on_failure:
             raise RuntimeError(
                 "No questions were fetched from HuggingFace datasets using the `datasets` library. "
+                "Check network access to huggingface.co and dataset availability. "
                 "Fetch failures: " + " | ".join(errors)
             )
         if not errors and not write_empty_on_failure:
             raise RuntimeError(
-                "No questions matched the requested datasets/filters. "
-                "Use --write-empty-on-failure only if you explicitly want an empty output file."
+                "No AMC/AIME questions matched the requested datasets/filters. "
+                "To explicitly allow empty output, use --write-empty-on-failure (CLI) or set write_empty_on_failure=True (API)."
             )
 
     with open(output_path, "w", encoding="utf-8") as f:
