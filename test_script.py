@@ -1,6 +1,7 @@
 import unittest
+from unittest.mock import patch
 
-from script import DatasetSource, build_sources, gather_math_resources, normalize_record
+from script import DatasetSource, build_sources, gather_arcmath_recent, gather_math_resources, normalize_record
 
 
 class ScriptTests(unittest.TestCase):
@@ -66,7 +67,7 @@ class ScriptTests(unittest.TestCase):
                 ]
             }
         }
-        rows = gather_math_resources(sources=sources, payload_override=payloads)
+        rows = gather_math_resources(sources=sources, payload_override=payloads, include_arcmath=False)
         self.assertEqual(len(rows), 1)
         row = rows[0]
         self.assertEqual(row.topic, "counting")
@@ -77,6 +78,26 @@ class ScriptTests(unittest.TestCase):
         sources = build_sources(["https://example.com/a.json", "https://example.com/b.json"])
         self.assertGreaterEqual(len(sources), 3)
         self.assertEqual(sources[-1].name, "online_source_2")
+
+    @patch("script._read_json")
+    @patch("script._arcmath_recent_files")
+    def test_gather_arcmath_recent_transforms_problem_set(self, mock_recent_files, mock_read_json):
+        mock_recent_files.return_value = [
+            {
+                "contest": "AMC8",
+                "year": 2026,
+                "exam": None,
+                "download_url": "https://example.com/amc8_2026.json",
+            }
+        ]
+        mock_read_json.return_value = {
+                "problemSet": {"contest": "AMC8", "year": 2026, "exam": None},
+                "problems": [{"number": 1, "answer": "A", "sourceUrl": "https://example.com/p1"}],
+            }
+        rows = gather_arcmath_recent(now_year=2026)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0].contest, "AMC 8")
+        self.assertEqual(rows[0].difficulty, "easy")
 
 
 if __name__ == "__main__":

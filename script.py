@@ -37,6 +37,10 @@ DEFAULT_SOURCES: List[DatasetSource] = [
         url="https://datasets-server.huggingface.co/first-rows?dataset=EleutherAI%2Fhendrycks_math&config=competition_math&split=test",
     ),
 ]
+ARCMATH_BASE_URL = (
+    "https://raw.githubusercontent.com/xiaoming1348/Arcmath/3420f12ea41380da7798150687aba7c372b4b37b/"
+    "packages/db/data/aops-imports"
+)
 
 
 def _read_json(url: str, timeout: int = 30) -> Any:
@@ -95,6 +99,20 @@ def _to_latex(question: str) -> str:
     return f"\\text{{{escaped}}}"
 
 
+def _infer_topic(question: str) -> str:
+    q = question.lower()
+    topic_rules = [
+        ("geometry", ("triangle", "circle", "angle", "polygon", "parallel", "perpendicular", "area", "perimeter")),
+        ("number theory", ("integer", "prime", "divisible", "gcd", "lcm", "mod", "remainder", "factor")),
+        ("combinatorics", ("arrange", "choose", "permutation", "combination", "ways", "probability", "count")),
+        ("algebra", ("equation", "polynomial", "function", "solve", "variable", "system")),
+    ]
+    for topic, keywords in topic_rules:
+        if any(k in q for k in keywords):
+            return topic
+    return "general"
+
+
 def _is_open_ended(record: Dict[str, Any], question: str, answer: str) -> bool:
     lower_q = question.lower()
     if any(hint in lower_q for hint in OPEN_ENDED_HINTS):
@@ -130,8 +148,99 @@ def normalize_record(record: Dict[str, Any], source_name: str, now_year: Optiona
     )
 
 
+def _build_contest_label(contest: str, exam: Optional[str]) -> str:
+    exam_part = f" {exam}" if exam else ""
+    if contest == "AMC8":
+        return "AMC 8"
+    if contest == "AMC10":
+        return f"AMC 10{exam_part}".strip()
+    if contest == "AMC12":
+        return f"AMC 12{exam_part}".strip()
+    if contest == "AIME":
+        return f"AIME{exam_part}".strip()
+    return contest
+
+
+def _difficulty_for_contest(contest: str) -> str:
+    return {
+        "AMC8": "easy",
+        "AMC10": "medium",
+        "AMC12": "hard",
+        "AIME": "very_hard",
+    }.get(contest, "unknown")
+
+
+def _arcmath_recent_files(now_year: Optional[int] = None) -> List[Dict[str, Any]]:
+    check_year = now_year if now_year is not None else datetime.now(timezone.utc).year
+    chosen = []
+    for year in range(check_year - (RECENT_WINDOW_YEARS - 1), check_year + 1):
+        for contest, exams in (
+            ("AMC8", [None]),
+            ("AMC10", ["A", "B"]),
+            ("AMC12", ["A", "B"]),
+            ("AIME", ["I", "II"]),
+        ):
+            for exam in exams:
+                label = _build_contest_label(contest, exam)
+                if not _is_recent_contest(label, year, check_year):
+                    continue
+                name = f"{contest}_{year}{f'_{exam}' if exam else ''}.json"
+                chosen.append(
+                    {
+                        "contest": contest,
+                        "year": year,
+                        "exam": exam,
+                        "download_url": f"{ARCMATH_BASE_URL}/{name}",
+                    }
+                )
+    return chosen
+
+
+def gather_arcmath_recent(now_year: Optional[int] = None) -> List[UnifiedProblem]:
+    problems: List[UnifiedProblem] = []
+    for file_meta in _arcmath_recent_files(now_year=now_year):
+        url = file_meta.get("download_url")
+        if not isinstance(url, str) or not url:
+            continue
+        try:
+            payload = _read_json(url)
+        except Exception:
+            continue
+        if not isinstance(payload, dict):
+            continue
+        for problem in payload.get("problems", []):
+            if not isinstance(problem, dict):
+                continue
+            answer = str(problem.get("answer", "")).strip()
+            if not answer:
+                continue
+            contest = _build_contest_label(file_meta["contest"], file_meta.get("exam"))
+            number = problem.get("number", "?")
+            statement = str(problem.get("statement", "")).strip()
+            source_url = str(problem.get("sourceUrl", "")).strip()
+            question = statement or f"Problem {number} from {contest} {file_meta['year']}. Source: {source_url}"
+            topic = _infer_topic(statement or source_url)
+            normalized = normalize_record(
+                {
+                    "contest": contest,
+                    "year": file_meta["year"],
+                    "topic": topic,
+                    "question_latex": question,
+                    "answer": answer,
+                    "difficulty": _difficulty_for_contest(file_meta["contest"]),
+                },
+                source_name="online_arcmath",
+                now_year=now_year,
+            )
+            if normalized is not None:
+                problems.append(normalized)
+    return problems
+
+
 def gather_math_resources(
-    sources: Optional[List[DatasetSource]] = None, payload_override: Optional[Dict[str, Any]] = None
+    sources: Optional[List[DatasetSource]] = None,
+    payload_override: Optional[Dict[str, Any]] = None,
+    include_arcmath: bool = True,
 ) -> List[UnifiedProblem]:
     chosen_sources = sources if sources is not None else DEFAULT_SOURCES
     data = payload_override or {}
@@ -147,6 +256,8 @@ def gather_math_resources(
             item = normalize_record(raw, source.name)
             if item is not None:
                 unified.append(item)
+    if include_arcmath:
+        unified.extend(gather_arcmath_recent())
     unified.sort(key=lambda x: (x.year, x.contest, x.topic))
     return unified
 
