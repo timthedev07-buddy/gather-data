@@ -1,6 +1,7 @@
 import argparse
 import ipaddress
 import json
+import re
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -302,11 +303,30 @@ def save_unified_dataset(output_path: str, records: List[UnifiedProblem]) -> Non
             f.write(json.dumps(asdict(row), ensure_ascii=False) + "\n")
 
 
+def _competition_filename(contest: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", contest.lower()).strip("_")
+    return f"{slug or 'unknown'}.jsonl"
+
+
+def save_datasets_by_competition(output_dir: str, records: List[UnifiedProblem]) -> None:
+    directory = Path(output_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    grouped: Dict[str, List[UnifiedProblem]] = {}
+    for row in records:
+        grouped.setdefault(row.contest, []).append(row)
+    for contest, items in grouped.items():
+        path = directory / _competition_filename(contest)
+        with path.open("w", encoding="utf-8") as f:
+            for row in items:
+                f.write(json.dumps(asdict(row), ensure_ascii=False) + "\n")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Gather AIME/AMC and related math contest data into a uniform format."
     )
     parser.add_argument("--output", default="data/unified_math_problems.jsonl")
+    parser.add_argument("--split-output-dir", default="data/by_competition")
     parser.add_argument(
         "--online-source-url",
         action="append",
@@ -316,7 +336,8 @@ def main() -> None:
     args = parser.parse_args()
     records = gather_math_resources(sources=build_sources(args.online_source_url))
     save_unified_dataset(args.output, records)
-    print(f"Wrote {len(records)} records to {args.output}")
+    save_datasets_by_competition(args.split_output_dir, records)
+    print(f"Wrote {len(records)} records to {args.output} and split files in {args.split_output_dir}")
 
 
 if __name__ == "__main__":

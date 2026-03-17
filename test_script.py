@@ -1,4 +1,6 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from script import (
@@ -8,6 +10,7 @@ from script import (
     gather_arcmath_recent,
     gather_math_resources,
     normalize_record,
+    save_datasets_by_competition,
 )
 
 
@@ -85,6 +88,39 @@ class ScriptTests(unittest.TestCase):
         sources = build_sources(["https://example.com/a.json", "https://example.com/b.json"])
         self.assertEqual(len(sources), len(DEFAULT_SOURCES) + 2)
         self.assertEqual(sources[-1].name, "online_source_2")
+
+    def test_save_datasets_by_competition_creates_split_files(self):
+        rows = [
+            normalize_record(
+                {
+                    "contest": "AMC 8",
+                    "year": 2026,
+                    "topic": "number theory",
+                    "question": "What is 2+2?",
+                    "answer": "4",
+                },
+                source_name="x",
+                now_year=2026,
+            ),
+            normalize_record(
+                {
+                    "contest": "AIME I",
+                    "year": 2026,
+                    "topic": "algebra",
+                    "question": "Find x if x=3",
+                    "answer": "3",
+                },
+                source_name="x",
+                now_year=2026,
+            ),
+        ]
+        rows = [r for r in rows if r is not None]
+        with TemporaryDirectory() as tmp:
+            save_datasets_by_competition(tmp, rows)
+            amc_file = Path(tmp) / "amc_8.jsonl"
+            aime_file = Path(tmp) / "aime_i.jsonl"
+            self.assertTrue(amc_file.exists())
+            self.assertTrue(aime_file.exists())
 
     @patch("script._read_json")
     @patch("script._arcmath_recent_files")
