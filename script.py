@@ -1,5 +1,6 @@
 import argparse
 import json
+import re
 from typing import Any, Dict, Iterable, List, Optional
 
 
@@ -25,7 +26,7 @@ def normalize_competition_name(value: Optional[str], default: Optional[str] = No
 
 def should_include_easy2hard_record(record: Dict[str, Any]) -> bool:
     combined = " ".join(str(v).lower() for v in record.values() if isinstance(v, str))
-    return any(token in combined for token in ("amc8", "amc 8", "amc10", "amc 10", "amc12", "amc 12"))
+    return bool(re.search(r"\bamc\s*(8|10|12)\b", combined))
 
 
 def normalize_record(record: Dict[str, Any], default_competition: Optional[str] = None) -> Optional[Dict[str, Any]]:
@@ -69,6 +70,7 @@ def build_questions(output_path: str, write_empty_on_failure: bool = False) -> i
 
     questions: List[Dict[str, Any]] = []
     errors: List[str] = []
+    fetch_exceptions = (ConnectionError, OSError, RuntimeError, ValueError)
 
     try:
         aime = load_dataset("MathArena/aime")
@@ -76,7 +78,7 @@ def build_questions(output_path: str, write_empty_on_failure: bool = False) -> i
             normalized = normalize_record(row, default_competition="aime")
             if normalized:
                 questions.append(normalized)
-    except Exception as exc:  # pragma: no cover - network/runtime dependent
+    except fetch_exceptions as exc:  # pragma: no cover - network/runtime dependent
         errors.append(f"MathArena/aime: {exc}")
 
     try:
@@ -91,7 +93,7 @@ def build_questions(output_path: str, write_empty_on_failure: bool = False) -> i
                 normalized = normalize_record(row)
                 if normalized and normalized["competition"] in {"amc8", "amc10", "amc12"}:
                     questions.append(normalized)
-    except Exception as exc:  # pragma: no cover - network/runtime dependent
+    except fetch_exceptions as exc:  # pragma: no cover - network/runtime dependent
         errors.append(f"furonghuang-lab/Easy2Hard-Bench: {exc}")
 
     if not questions and errors and not write_empty_on_failure:
@@ -103,7 +105,7 @@ def build_questions(output_path: str, write_empty_on_failure: bool = False) -> i
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Download and combine AIME + AMC questions from Hugging Face datasets.")
+    parser = argparse.ArgumentParser(description="Download and combine AIME + AMC questions from HuggingFace datasets.")
     parser.add_argument(
         "--output",
         default="all_math_questions.json",
