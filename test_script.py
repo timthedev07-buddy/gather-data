@@ -1,7 +1,14 @@
 import unittest
 from unittest.mock import patch
 
-from script import DatasetSource, build_sources, gather_arcmath_recent, gather_math_resources, normalize_record
+from script import (
+    DEFAULT_SOURCES,
+    DatasetSource,
+    build_sources,
+    gather_arcmath_recent,
+    gather_math_resources,
+    normalize_record,
+)
 
 
 class ScriptTests(unittest.TestCase):
@@ -76,12 +83,13 @@ class ScriptTests(unittest.TestCase):
 
     def test_build_sources_adds_extra_online_sources(self):
         sources = build_sources(["https://example.com/a.json", "https://example.com/b.json"])
-        self.assertGreaterEqual(len(sources), 3)
+        self.assertEqual(len(sources), len(DEFAULT_SOURCES) + 2)
         self.assertEqual(sources[-1].name, "online_source_2")
 
     @patch("script._read_json")
     @patch("script._arcmath_recent_files")
     def test_gather_arcmath_recent_transforms_problem_set(self, mock_recent_files, mock_read_json):
+        # Input contest code follows source naming ("AMC8"), while output is normalized ("AMC 8").
         mock_recent_files.return_value = [
             {
                 "contest": "AMC8",
@@ -98,6 +106,8 @@ class ScriptTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0].contest, "AMC 8")
         self.assertEqual(rows[0].difficulty, "easy")
+        self.assertEqual(rows[0].answer, "A")
+        self.assertIn("Problem 1", rows[0].question_latex)
 
 
 if __name__ == "__main__":

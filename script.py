@@ -1,9 +1,11 @@
 import argparse
+import ipaddress
 import json
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 
@@ -14,6 +16,13 @@ OPEN_ENDED_HINTS = ("prove", "proof", "show that", "justify", "explain")
 
 @dataclass
 class DatasetSource:
+    """Remote JSON source descriptor.
+
+    name: unique identifier used in logs/overrides.
+    url: absolute endpoint used to fetch JSON payload.
+    source_type: provenance label (for example 'huggingface' or 'online').
+    """
+
     name: str
     url: str
     source_type: str
@@ -21,6 +30,11 @@ class DatasetSource:
 
 @dataclass
 class UnifiedProblem:
+    """Normalized math problem record.
+
+    difficulty is one of: easy, medium, hard, very_hard, unknown.
+    """
+
     source: str
     contest: str
     year: int
@@ -44,8 +58,20 @@ ARCMATH_BASE_URL = (
 
 
 def _read_json(url: str, timeout: int = 30) -> Any:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"https", "http"} or not parsed.hostname:
+        raise ValueError(f"Unsupported URL: {url}")
+    if parsed.hostname in {"localhost", "127.0.0.1", "::1"}:
+        raise ValueError("Localhost URLs are not allowed.")
+    ip = None
+    try:
+        ip = ipaddress.ip_address(parsed.hostname)
+    except ValueError:
+        ip = None
+    if ip and (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast):
+        raise ValueError("Private or local IP addresses are not allowed.")
     req = Request(url, headers={"User-Agent": "gather-data-script/1.0"})
-    with urlopen(req, timeout=timeout) as resp:  # nosec B310 - fixed URL list/user-provided URL
+    with urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
 
@@ -217,9 +243,8 @@ def gather_arcmath_recent(now_year: Optional[int] = None) -> List[UnifiedProblem
             contest = _build_contest_label(file_meta["contest"], file_meta.get("exam"))
             number = problem.get("number", "?")
             statement = str(problem.get("statement", "")).strip()
-            source_url = str(problem.get("sourceUrl", "")).strip()
-            question = statement or f"Problem {number} from {contest} {file_meta['year']}. Source: {source_url}"
-            topic = _infer_topic(statement or source_url)
+            question = statement or f"Problem {number} from {contest} {file_meta['year']} (statement unavailable in source)."
+            topic = _infer_topic(statement)
             normalized = normalize_record(
                 {
                     "contest": contest,
