@@ -87,6 +87,43 @@ class ScriptTests(unittest.TestCase):
             self.assertEqual(data[0]["competition"], "aime")
             self.assertEqual(data[1]["competition"], "amc10")
 
+    def test_build_questions_raises_when_fetch_fails_and_empty_not_allowed(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "out.json")
+
+            class FakeDatasetsModule:
+                @staticmethod
+                def get_dataset_config_names(name):
+                    raise OSError("network unavailable")
+
+                @staticmethod
+                def load_dataset(name, config=None):
+                    raise OSError("network unavailable")
+
+            with patch.dict("sys.modules", {"datasets": FakeDatasetsModule}):
+                with self.assertRaisesRegex(RuntimeError, "No questions were fetched from HuggingFace datasets"):
+                    build_questions(output_path)
+
+    def test_build_questions_can_write_empty_when_explicitly_requested(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = os.path.join(tmpdir, "out.json")
+
+            class FakeDatasetsModule:
+                @staticmethod
+                def get_dataset_config_names(name):
+                    raise OSError("network unavailable")
+
+                @staticmethod
+                def load_dataset(name, config=None):
+                    raise OSError("network unavailable")
+
+            with patch.dict("sys.modules", {"datasets": FakeDatasetsModule}):
+                total = build_questions(output_path, write_empty_on_failure=True)
+
+            self.assertEqual(total, 0)
+            with open(output_path, "r", encoding="utf-8") as f:
+                self.assertEqual(json.load(f), [])
+
 
 if __name__ == "__main__":
     unittest.main()

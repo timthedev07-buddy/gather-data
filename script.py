@@ -1,6 +1,7 @@
 import argparse
 import json
 import re
+import sys
 from typing import Any, Dict, Iterable, List, Optional
 
 
@@ -96,8 +97,17 @@ def build_questions(output_path: str, write_empty_on_failure: bool = False) -> i
     except fetch_exceptions as exc:  # pragma: no cover - network/runtime dependent
         errors.append(f"furonghuang-lab/Easy2Hard-Bench: {exc}")
 
-    if not questions and errors and not write_empty_on_failure:
-        raise RuntimeError("Failed to fetch datasets: " + " | ".join(errors))
+    if not questions:
+        if errors and not write_empty_on_failure:
+            raise RuntimeError(
+                "No questions were fetched from HuggingFace datasets using the `datasets` library. "
+                "Fetch failures: " + " | ".join(errors)
+            )
+        if not errors and not write_empty_on_failure:
+            raise RuntimeError(
+                "No questions matched the requested datasets/filters. "
+                "Use --write-empty-on-failure only if you explicitly want an empty output file."
+            )
 
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(questions, f, ensure_ascii=False, indent=2)
@@ -117,8 +127,12 @@ def main() -> None:
         help="Write an empty JSON list if remote datasets are unavailable.",
     )
     args = parser.parse_args()
-    total = build_questions(args.output, write_empty_on_failure=args.write_empty_on_failure)
-    print(f"Wrote {total} questions to {args.output}")
+    try:
+        total = build_questions(args.output, write_empty_on_failure=args.write_empty_on_failure)
+        print(f"Wrote {total} questions to {args.output}")
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
