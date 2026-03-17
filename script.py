@@ -36,11 +36,6 @@ DEFAULT_SOURCES: List[DatasetSource] = [
         source_type="huggingface",
         url="https://datasets-server.huggingface.co/first-rows?dataset=EleutherAI%2Fhendrycks_math&config=competition_math&split=test",
     ),
-    DatasetSource(
-        name="aops_math_data",
-        source_type="online",
-        url="https://raw.githubusercontent.com/ArturUlfeldt/mathcontests-data/main/contests.json",
-    ),
 ]
 
 
@@ -156,6 +151,13 @@ def gather_math_resources(
     return unified
 
 
+def build_sources(extra_online_urls: Optional[List[str]] = None) -> List[DatasetSource]:
+    sources = list(DEFAULT_SOURCES)
+    for idx, url in enumerate(extra_online_urls or []):
+        sources.append(DatasetSource(name=f"online_source_{idx + 1}", url=url, source_type="online"))
+    return sources
+
+
 def save_unified_dataset(output_path: str, records: List[UnifiedProblem]) -> None:
     path = Path(output_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -169,8 +171,14 @@ def main() -> None:
         description="Gather AIME/AMC and related math contest data into a uniform format."
     )
     parser.add_argument("--output", default="data/unified_math_problems.jsonl")
+    parser.add_argument(
+        "--online-source-url",
+        action="append",
+        default=[],
+        help="Additional online JSON endpoint(s) to ingest besides Hugging Face datasets.",
+    )
     args = parser.parse_args()
-    records = gather_math_resources()
+    records = gather_math_resources(sources=build_sources(args.online_source_url))
     save_unified_dataset(args.output, records)
     print(f"Wrote {len(records)} records to {args.output}")
 

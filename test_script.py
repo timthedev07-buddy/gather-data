@@ -1,6 +1,6 @@
 import unittest
 
-from script import DatasetSource, gather_math_resources, normalize_record
+from script import DatasetSource, build_sources, gather_math_resources, normalize_record
 
 
 class ScriptTests(unittest.TestCase):
@@ -72,6 +72,11 @@ class ScriptTests(unittest.TestCase):
         self.assertEqual(row.topic, "counting")
         self.assertEqual(row.answer, "10")
         self.assertIn("question_latex", row.__dict__)
+
+    def test_build_sources_adds_extra_online_sources(self):
+        sources = build_sources(["https://example.com/a.json", "https://example.com/b.json"])
+        self.assertGreaterEqual(len(sources), 3)
+        self.assertEqual(sources[-1].name, "online_source_2")
 
 
 if __name__ == "__main__":
